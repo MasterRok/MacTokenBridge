@@ -122,9 +122,14 @@ This builds, signs, notarizes and staples `build/MacTokenBridge-<version>.dmg`. 
 
 ## Support the project
 
-MacTokenBridge is free. If it saved you time, donations are welcome:
+MacTokenBridge is free. If it saved you time, donations are welcome. Please send each coin **only on the network listed** — anything sent on another network is lost.
 
-<!-- DONATIONS: wallet addresses go here -->
+| Coin | Network | Address |
+|---|---|---|
+| BTC | Bitcoin | `bc1qskfku5w967esarysykg0shxxvhtv032z5vfhf3` |
+| USDT | TRON (TRC-20) only | `TY3Etzbx4S24R9L3tQi46MrcZtxcCicVvL` |
+| ETH | Ethereum | `0x36803D595ae71E28dD6478daB49602Ba0178Aed1` |
+| SOL | Solana | `6H5waHz1g4Tqffrdca3hzG1JTGfHPqov7phUiwKwDJVy` |
 
 ## License
 
