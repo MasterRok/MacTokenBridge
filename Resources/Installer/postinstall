@@ -1,0 +1,23 @@
+#!/bin/sh
+# Runs as root after Installer has copied the app. Everything else (extension registration,
+# LaunchAgent, certificates) belongs to the logged-in user, so run it in their session.
+APP="/Applications/MacTokenBridge.app"
+LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+
+USER_NAME=$(stat -f %Su /dev/console)
+if [ -z "$USER_NAME" ] || [ "$USER_NAME" = "root" ] || [ "$USER_NAME" = "loginwindow" ]; then
+	# Nobody is logged in (e.g. a managed deployment): the user opens the app once later.
+	exit 0
+fi
+USER_ID=$(id -u "$USER_NAME")
+
+as_user() {
+	launchctl asuser "$USER_ID" sudo -u "$USER_NAME" "$@"
+}
+
+as_user "$LSREGISTER" -f "$APP"
+as_user pluginkit -a "$APP/Contents/PlugIns/MacTokenBridgeToken.appex"
+sleep 2
+# Shows a dialog with the result; a missing token is not an installation failure.
+as_user "$APP/Contents/MacOS/MacTokenBridge" install --gui || true
+exit 0
