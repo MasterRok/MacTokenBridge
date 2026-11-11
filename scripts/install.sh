@@ -5,7 +5,6 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 DEST=~/Applications/MacTokenBridge.app
-LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
 
 scripts/build.sh
 mkdir -p ~/Applications
@@ -15,7 +14,5 @@ if [[ -x $DEST/Contents/MacOS/MacTokenBridge ]]; then
 fi
 rm -rf "$DEST"
 cp -R build/MacTokenBridge.app "$DEST"
-"$LSREGISTER" -f "$DEST"
-pluginkit -a "$DEST/Contents/PlugIns/MacTokenBridgeToken.appex"
-sleep 2
+# Registers the app and its token extension with macOS, then the certificates.
 "$DEST/Contents/MacOS/MacTokenBridge" install "$@"

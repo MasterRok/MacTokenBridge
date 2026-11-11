@@ -70,6 +70,20 @@ enum Strings {
 			pl: "Nie znaleziono jeszcze certyfikatu. Podłącz token (dla SimplySign: otwórz SimplySign Desktop i zaloguj się), a następnie ponownie otwórz MacTokenBridge.")
 	}
 
+	static var moveToApplications: String {
+		return pick(
+			en: "Move MacTokenBridge to the Applications folder first, then open it from there.",
+			ru: "Сначала перетащите MacTokenBridge в папку «Программы» и откройте его оттуда.",
+			pl: "Najpierw przenieś MacTokenBridge do folderu Aplikacje i otwórz go stamtąd.")
+	}
+
+	static var registrationFailed: String {
+		return pick(
+			en: "macOS did not load the MacTokenBridge token extension. Restart your Mac and open MacTokenBridge again.",
+			ru: "macOS не загрузила расширение MacTokenBridge. Перезагрузите Mac и снова откройте MacTokenBridge.",
+			pl: "macOS nie załadował rozszerzenia MacTokenBridge. Uruchom ponownie Maca i otwórz MacTokenBridge jeszcze raz.")
+	}
+
 	static var noModule: String {
 		return pick(
 			en: "No PKCS#11 module found. Install your signature provider's software first.",

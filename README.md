@@ -29,11 +29,14 @@ Like Firefox, the helper asks for the PIN once and stays logged in until you log
 
 ## Install
 
-### Installer (recommended)
+### Disk image (recommended)
 
-1. Download `MacTokenBridge-<version>.pkg` from [Releases](../../releases) and open it.
-2. At the end MacTokenBridge reads the certificates from your token and shows which ones it registered. If your token was not available (for SimplySign: SimplySign Desktop not signed in), sign in and open **MacTokenBridge** from Applications once.
-3. Open the website. Chrome asks you to choose a certificate, then MacTokenBridge asks for your PIN.
+1. Download `MacTokenBridge-<version>.dmg` from [Releases](../../releases) and open it.
+2. Drag **MacTokenBridge** to **Applications**, then open it from Applications. (Opened straight from the disk image, it asks you to move it first.)
+3. MacTokenBridge reads the certificates from your token and shows which ones it registered. If your token is not available yet (for SimplySign: SimplySign Desktop is not signed in), sign in and click **Try Again**.
+4. Open the website. Chrome asks you to choose a certificate, then MacTokenBridge asks for your PIN.
+
+Open MacTokenBridge again whenever you get a new certificate or install a new version.
 
 ### From source
 
@@ -80,8 +83,9 @@ The helper logs to `~/Library/Logs/MacTokenBridge.log`.
 
 ```bash
 /Applications/MacTokenBridge.app/Contents/MacOS/MacTokenBridge uninstall
-sudo rm -rf /Applications/MacTokenBridge.app
 ```
+
+Then move MacTokenBridge from Applications to the Trash.
 
 ## Security
 
@@ -111,12 +115,10 @@ The SimplySign module keeps its login per calling thread: a watcher thread (`Thr
 ## Building a release
 
 ```bash
-APP_IDENTITY="Developer ID Application: Name (TEAMID)" \
-INSTALLER_IDENTITY="Developer ID Installer: Name (TEAMID)" \
-scripts/package.sh
+APP_IDENTITY="Developer ID Application: Name (TEAMID)" scripts/package.sh
 ```
 
-This needs a `notarytool` keychain profile named `MacTokenBridge` (`xcrun notarytool store-credentials MacTokenBridge ...`).
+This builds, signs, notarizes and staples `build/MacTokenBridge-<version>.dmg`. It needs a `notarytool` keychain profile named `MacTokenBridge` (`xcrun notarytool store-credentials MacTokenBridge ...`). `SKIP_NOTARIZE=1` skips notarization for local testing.
 
 ## Support the project
 

@@ -94,14 +94,42 @@ func registerToken(serial: String, certificates: [TokenCertificate]) throws -> [
 }
 
 @discardableResult
-func launchctl(_ args: [String]) -> Int32 {
+func run(_ executable: String, _ args: [String]) -> Int32 {
 	let process = Process()
-	process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+	process.executableURL = URL(fileURLWithPath: executable)
 	process.arguments = args
+	process.standardOutput = FileHandle.nullDevice
 	process.standardError = FileHandle.nullDevice
 	try? process.run()
 	process.waitUntilExit()
 	return process.terminationStatus
+}
+
+@discardableResult
+func launchctl(_ args: [String]) -> Int32 {
+	return run("/bin/launchctl", args)
+}
+
+/// A copy opened straight from the disk image, or one Gatekeeper translocated to a random
+/// read-only path, goes away later; a LaunchAgent pointing at it would break.
+func isRunningFromTemporaryLocation() -> Bool {
+	let path = Bundle.main.bundlePath
+	return path.hasPrefix("/Volumes/") || path.contains("/AppTranslocation/")
+}
+
+/// Makes macOS use this copy's token extension: registers the app with LaunchServices and the
+/// extension with PlugInKit, then waits until CryptoTokenKit lists the token driver.
+func registerWithSystem() -> Bool {
+	let bundle = Bundle.main.bundlePath
+	run("/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister", ["-f", bundle])
+	run("/usr/bin/pluginkit", ["-a", bundle + "/Contents/PlugIns/MacTokenBridgeToken.appex"])
+	for _ in 0..<40 {
+		if driverConfiguration() != nil {
+			return true
+		}
+		usleep(250_000)
+	}
+	return false
 }
 
 func installLaunchAgent(modulePath: String) {
@@ -152,8 +180,16 @@ func install(modulePath requested: String?, gui: Bool) {
 		}
 	}
 
+	guard !isRunningFromTemporaryLocation() else {
+		report(Strings.moveToApplications)
+		exit(1)
+	}
 	guard let modulePath = requested ?? installedModulePath() ?? KnownModules.firstInstalled() else {
 		report(Strings.noModule)
+		exit(1)
+	}
+	guard registerWithSystem() else {
+		report(Strings.registrationFailed)
 		exit(1)
 	}
 	guard FileManager.default.fileExists(atPath: modulePath) else {
