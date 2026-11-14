@@ -17,14 +17,18 @@ final class HelperService: NSObject, NSXPCListenerDelegate, HelperProtocol {
 		return true
 	}
 
-	func signDigestInfo(_ digestInfo: Data, keyID: String, reply: @escaping (Data?, String?) -> Void) {
+	func sign(_ input: Data, mechanism: Int, keyID: String, reply: @escaping (Data?, String?) -> Void) {
 		guard let id = data(fromHex: keyID) else {
 			reply(nil, "bad key id")
 			return
 		}
+		guard let mechanism = SignMechanism(rawValue: mechanism) else {
+			reply(nil, "unsupported mechanism 0x\(String(mechanism, radix: 16))")
+			return
+		}
 		do {
-			let signature = try session.sign(digestInfo: digestInfo, keyID: id)
-			log("signed \(digestInfo.count) bytes")
+			let signature = try session.sign(input, mechanism: mechanism, keyID: id)
+			log("signed \(input.count) bytes (\(mechanism))")
 			reply(signature, nil)
 		} catch {
 			log("sign failed: \(error)")

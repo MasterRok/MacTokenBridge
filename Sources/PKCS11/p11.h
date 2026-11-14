@@ -51,11 +51,13 @@ unsigned long p11_login(const char *pin);
 /// 1 if the private key needs a context-specific login before every signature.
 unsigned long p11_key_always_authenticate(const uint8_t *key_id, size_t key_id_len, int *always);
 
-/// CKM_RSA_PKCS signature over data (a DER DigestInfo). context_pin is used for
+/// Signature with a mechanism that takes no parameters: CKM_RSA_PKCS over a DER DigestInfo,
+/// or CKM_ECDSA over a digest (the result is raw r||s). context_pin is used for
 /// CKU_CONTEXT_SPECIFIC login when the key requires it, otherwise may be NULL.
-unsigned long p11_sign_rsa_pkcs(const uint8_t *key_id, size_t key_id_len,
-                                const uint8_t *data, size_t data_len,
-                                const char *context_pin,
-                                uint8_t *sig, size_t *sig_len);
+unsigned long p11_sign(unsigned long mechanism,
+                       const uint8_t *key_id, size_t key_id_len,
+                       const uint8_t *data, size_t data_len,
+                       const char *context_pin,
+                       uint8_t *sig, size_t *sig_len);
 
 #endif

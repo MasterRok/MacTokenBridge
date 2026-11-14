@@ -4,7 +4,7 @@ Use a PKCS#11 signing certificate — such as a **Certum SimplySign** cloud sign
 
 On macOS, Chrome and Safari only see certificates that the system itself knows about (the keychain and smart cards). Many signature providers ship only a PKCS#11 module for the Mac, which Firefox can load but Chrome cannot. MacTokenBridge connects the two: it presents your PKCS#11 certificate to macOS as a smart card.
 
-> **Status:** early release. Tested with Certum SimplySign (qualified certificate, RSA-3072) on macOS 26.5, signing in to JAO eCAT with Chrome. Other modules should work in principle but are untested — please report what you try.
+> **Status:** early release. Tested with Certum SimplySign (qualified certificate, RSA-3072) on macOS 26.5, signing in to JAO eCAT with Chrome, and with EC P-256 keys on SoftHSM v2. Other modules should work in principle but are untested — please report what you try.
 
 ## How it works
 
@@ -25,7 +25,7 @@ Like Firefox, the helper asks for the PIN once and stays logged in until you log
 
 - macOS 14 or later, Apple silicon or Intel.
 - Your signature provider's software, including its PKCS#11 module. For SimplySign: **SimplySign Desktop**, signed in.
-- An RSA certificate. Sites must accept RSA PKCS#1 v1.5 client signatures (see [Limitations](#limitations)).
+- An RSA or EC (ECDSA) certificate. With RSA, sites must accept RSA PKCS#1 v1.5 client signatures (see [Limitations](#limitations)).
 
 ## Install
 
@@ -98,7 +98,8 @@ Read this before you use a qualified signature with it.
 
 ## Limitations
 
-- **RSA PKCS#1 v1.5 only.** No ECDSA keys and no RSA-PSS yet. TLS 1.3 requires RSA-PSS (or ECDSA) for client certificates, so a TLS 1.3-only site will not work with an RSA key. SimplySign has no RSA-PSS at all, so this affects Firefox the same way.
+- **RSA keys sign with PKCS#1 v1.5 only, no RSA-PSS yet.** TLS 1.3 requires RSA-PSS (or ECDSA) for client certificates, so a TLS 1.3-only site will not work with an RSA key. SimplySign has no RSA-PSS at all, so this affects Firefox the same way.
+- **EC keys sign with ECDSA** (`CKM_ECDSA`), which TLS 1.2 and 1.3 both accept. The module must offer `CKM_ECDSA`; MacTokenBridge hashes nothing itself and passes the digest the browser asks to sign.
 - Only the first slot that holds a token is used; all its user certificates are registered.
 - Tested with one provider so far.
 
@@ -111,6 +112,14 @@ Read this before you use a qualified signature with it.
 ### Notes for developers
 
 The SimplySign module keeps its login per calling thread: a watcher thread (`ThreadsWatchingTread`) checks callers with `pthread_kill(thread, 0)` and tears down the login and cloud connection (`pkislFinalOne`) once a caller has exited. The helper therefore makes every PKCS#11 call from one long-lived thread (`Sources/App/P11Thread.swift`). Without it, short-lived GCD worker threads made the connection drop seconds after the first signature.
+
+### Tests
+
+```bash
+scripts/test.sh
+```
+
+Builds and runs the unit tests in `Tests/` (the pure code in `Sources/Shared`, such as converting PKCS#11's raw ECDSA signature to the DER form macOS expects).
 
 ## Building a release
 
