@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// User-facing strings in English, Russian and Polish, picked from the system language.
@@ -42,6 +43,21 @@ enum Strings {
 
 	static var wrongPIN: String {
 		return pick(en: "Wrong PIN. Try again.", ru: "Неверный PIN. Попробуйте ещё раз.", pl: "Nieprawidłowy PIN. Spróbuj ponownie.")
+	}
+
+	static var rememberPIN: String {
+		return pick(en: "Remember PIN:", ru: "Запомнить PIN:", pl: "Zapamiętaj PIN:")
+	}
+
+	static func retention(_ retention: PINRetention) -> String {
+		switch retention {
+		case .never:
+			return pick(en: "Don’t remember", ru: "Не запоминать", pl: "Nie zapamiętuj")
+		case .oneHour:
+			return pick(en: "For 1 hour", ru: "На 1 час", pl: "Na 1 godzinę")
+		case .oneDay:
+			return pick(en: "For 1 day", ru: "На 1 день", pl: "Na 1 dzień")
+		}
 	}
 
 	static var contextPIN: String {
@@ -117,19 +133,71 @@ private func runDialog(_ script: String) throws -> String? {
 	return String(decoding: raw, as: UTF8.self).trimmingCharacters(in: .newlines)
 }
 
-/// Shows a password dialog. The PIN never leaves this process except into C_Login.
+/// Shows the PIN dialog and waits for it; offerRemember adds the "Remember PIN" choice.
+/// The PIN goes only into C_Login and, if the user asks for it, PINStore.
 /// Gives up after two minutes so an unattended dialog does not block signing forever.
-func askPIN(message: String) throws -> String {
-	let script = """
-		display dialog \(appleScriptString(message)) with title "MacTokenBridge" default answer "" with hidden answer ¬
-			buttons {\(appleScriptString(Strings.cancel)), "OK"} default button "OK" ¬
-			cancel button \(appleScriptString(Strings.cancel)) with icon caution giving up after 120
-		text returned of result
-		"""
-	guard let pin = try runDialog(script), !pin.isEmpty else {
+/// Called from the PKCS#11 thread: the dialog itself runs on the main thread.
+func askPIN(message: String, offerRemember: Bool) throws -> (pin: String, retention: PINRetention) {
+	let show = {
+		MainActor.assumeIsolated {
+			PINDialog.run(message: message, offerRemember: offerRemember)
+		}
+	}
+	let answer = Thread.isMainThread ? show() : DispatchQueue.main.sync(execute: show)
+	guard let answer, !answer.pin.isEmpty else {
 		throw CancelledError(what: "PIN entry")
 	}
-	return pin
+	return answer
+}
+
+@MainActor
+private enum PINDialog {
+	static let timeout: TimeInterval = 120
+	static let width: CGFloat = 280
+
+	static func run(message: String, offerRemember: Bool) -> (pin: String, retention: PINRetention)? {
+		let alert = NSAlert()
+		alert.messageText = "MacTokenBridge"
+		alert.informativeText = message
+		alert.addButton(withTitle: Strings.ok)
+		alert.addButton(withTitle: Strings.cancel).keyEquivalent = "\u{1b}"
+
+		let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: width, height: 24))
+		let accessory = NSView(frame: field.frame)
+		accessory.addSubview(field)
+		var popup: NSPopUpButton?
+		if offerRemember {
+			// "Remember PIN: [Don't remember ▾]" below the field; "Don't remember" is the default.
+			let label = NSTextField(labelWithString: Strings.rememberPIN)
+			label.sizeToFit()
+			label.frame.origin = NSPoint(x: 0, y: 3)
+			let choice = NSPopUpButton(frame: NSRect(x: label.frame.maxX + 6, y: 0, width: width - label.frame.maxX - 6, height: 26))
+			choice.addItems(withTitles: PINRetention.allCases.map(Strings.retention))
+			accessory.frame.size.height = 62
+			field.frame.origin.y = 36
+			accessory.addSubview(label)
+			accessory.addSubview(choice)
+			popup = choice
+		}
+		alert.accessoryView = accessory
+		alert.window.initialFirstResponder = field
+		alert.window.level = .floating
+
+		// The helper has no windows of its own; without this the dialog opens behind the browser.
+		NSApp.activate()
+		let timer = Timer(timeInterval: timeout, repeats: false) { _ in
+			NSApp.abortModal()
+		}
+		RunLoop.main.add(timer, forMode: .modalPanel)
+		defer {
+			timer.invalidate()
+		}
+		guard alert.runModal() == .alertFirstButtonReturn else {
+			return nil
+		}
+		let retention = popup.map { PINRetention.allCases[$0.indexOfSelectedItem] } ?? .never
+		return (field.stringValue, retention)
+	}
 }
 
 /// Shows message with "Try again" and "Cancel"; true when the user chose to try again.

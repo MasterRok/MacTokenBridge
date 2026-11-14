@@ -21,6 +21,8 @@ token extension ──XPC──► MacTokenBridge helper ──► PKCS#11 modul
 
 Like Firefox, the helper asks for the PIN once and stays logged in until you log out, restart, or the token goes away (for SimplySign: until SimplySign Desktop disconnects).
 
+The PIN dialog can also **remember the PIN for 1 hour or 1 day** (the default is not to remember it). While the remembered PIN is valid, the helper signs in again by itself after SimplySign Desktop reconnects, after a restart of the helper, or after you restart your Mac. See [Security](#security) before you use this.
+
 ## Requirements
 
 - macOS 14 or later, Apple silicon or Intel.
@@ -74,7 +76,8 @@ For any other module:
 MacTokenBridge status     # module, registered certificates, log location
 MacTokenBridge selftest   # sign a random digest through the keychain, exactly like a browser
 MacTokenBridge install    # re-read the certificates (e.g. after renewing one)
-MacTokenBridge uninstall  # remove the token and the helper
+MacTokenBridge forget-pin # delete remembered PINs and log out; the next signature asks for the PIN
+MacTokenBridge uninstall  # remove the token, the helper and any remembered PIN
 ```
 
 The helper logs to `~/Library/Logs/MacTokenBridge.log`.
@@ -92,7 +95,9 @@ Then move MacTokenBridge from Applications to the Trash.
 Read this before you use a qualified signature with it.
 
 - **While the helper is logged in, any app running as you can ask macOS to sign with your key**, without another prompt. That is how macOS treats smart cards too, but a qualified signature is legally binding. Log out of your Mac account (or restart) to end the session, and only run software you trust.
-- Your PIN goes from the PIN dialog straight into the PKCS#11 module (`C_Login`). It is not stored or logged.
+- Your PIN goes from the PIN dialog straight into the PKCS#11 module (`C_Login`). It is never logged, and it is stored only if you choose to remember it.
+- **A remembered PIN** is kept in your login keychain as a generic password named "MacTokenBridge PIN", together with its expiry. It stays on this Mac (not synced to iCloud), is deleted once it expires, and MacTokenBridge deletes it at once if the token refuses it, so a wrong stored PIN is never tried twice and cannot lock your token. `forget-pin` and `uninstall` delete it.
+  - The trade-off: while it is stored, the PIN itself sits on disk, protected by your login keychain. Other apps normally get a macOS keychain prompt before they can read it. A copy of MacTokenBridge built from source is ad-hoc signed, and then programs you build yourself can read it without a prompt. Anyone who can unlock your Mac account can read it in Keychain Access. For a qualified signature, remember the PIN only on a Mac that only you use.
 - The helper accepts XPC requests only from MacTokenBridge's own token extension, checked by code signature.
 - The code is small and meant to be read: `Sources/App/PKCS11Session.swift` and `Sources/PKCS11/p11.c` handle the module; `Sources/Token/` is everything the system sees.
 

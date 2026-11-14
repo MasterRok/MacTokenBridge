@@ -102,11 +102,21 @@ final class PKCS11Session {
 		UInt(P11_ERR_NOT_FOUND),  // private keys are hidden when the login was lost
 	]
 
+	/// The token refused the PIN itself; a remembered PIN that gets one of these is deleted.
+	private static let rejectedPINErrors: Set<UInt> = [
+		0xa0,  // CKR_PIN_INCORRECT
+		0xa1,  // CKR_PIN_INVALID
+		0xa2,  // CKR_PIN_LEN_RANGE
+		0xa3,  // CKR_PIN_EXPIRED
+		0xa4,  // CKR_PIN_LOCKED
+	]
+
 	let modulePath: String
 	private let p11Thread = P11Thread(name: "\(Identifiers.app).p11")
 	private var sessionOpen = false
 	private var loggedIn = false
 	private var tokenLabel = "PKCS#11"
+	private var tokenSerial = ""
 	private var lastUnavailableNotice: Date?
 
 	init(modulePath: String) {
@@ -190,7 +200,13 @@ final class PKCS11Session {
 		var serial = [CChar](repeating: 0, count: 32)
 		if p11_token_info(&label, label.count, &serial, serial.count) == P11_OK {
 			tokenLabel = String(cString: label)
+			tokenSerial = String(cString: serial)
 		}
+	}
+
+	/// Which token a remembered PIN belongs to.
+	private var pinStoreKey: String {
+		return tokenSerial.isEmpty ? tokenLabel : tokenSerial
 	}
 
 	/// The old session stays open until ensureSession has opened its replacement (see p11_open_session).
@@ -217,13 +233,17 @@ final class PKCS11Session {
 			loggedIn = true
 			return
 		}
+		if try loginWithRememberedPIN() {
+			return
+		}
 		var message = Strings.pinPrompt(token: tokenLabel)
 		for _ in 0..<3 {
-			let pin = try askPIN(message: message)
-			let rv = p11_login(pin)
+			let answer = try askPIN(message: message, offerRemember: true)
+			let rv = p11_login(answer.pin)
 			if rv == P11_OK {
 				loggedIn = true
 				log("logged in")
+				remember(answer.pin, for: answer.retention)
 				return
 			}
 			if rv == P11_RV_PIN_LOCKED {
@@ -237,6 +257,40 @@ final class PKCS11Session {
 		throw P11Error(rv: UInt(P11_RV_PIN_INCORRECT), operation: "login")
 	}
 
+	/// Logs in with the PIN the user chose to remember, if one is stored and still valid.
+	/// It is tried once only: tokens lock after a few wrong PINs, so a refused PIN is deleted
+	/// at once and the user is asked instead.
+	private func loginWithRememberedPIN() throws -> Bool {
+		guard let pin = PINStore.load(token: pinStoreKey) else {
+			return false
+		}
+		let rv = p11_login(pin)
+		if rv == P11_OK {
+			loggedIn = true
+			log("logged in with the remembered PIN")
+			return true
+		}
+		guard Self.rejectedPINErrors.contains(rv) else {
+			// Not about the PIN (e.g. the token went away): keep it for the next attempt.
+			throw P11Error(rv: rv, operation: "login")
+		}
+		PINStore.forget(token: pinStoreKey)
+		log("the token refused the remembered PIN (CK_RV 0x\(String(rv, radix: 16))), forgot it")
+		if rv == P11_RV_PIN_LOCKED {
+			throw P11Error(rv: rv, operation: "login (PIN locked)")
+		}
+		return false
+	}
+
+	private func remember(_ pin: String, for retention: PINRetention) {
+		guard let expiry = retention.expiry(from: Date()) else {
+			PINStore.forget(token: pinStoreKey)
+			return
+		}
+		PINStore.save(pin: pin, token: pinStoreKey, expires: expiry)
+		log("remembering the PIN until \(expiry)")
+	}
+
 	private func signOnce(_ data: Data, mechanism: SignMechanism, keyID: Data) throws -> Data {
 		try ensureSession()
 		try ensureLogin()
@@ -247,7 +301,7 @@ final class PKCS11Session {
 		}
 		var contextPIN: String? = nil
 		if always != 0 {
-			contextPIN = try askPIN(message: Strings.contextPIN)
+			contextPIN = try askPIN(message: Strings.contextPIN, offerRemember: false).pin
 		}
 
 		var signature = [UInt8](repeating: 0, count: 1024)
