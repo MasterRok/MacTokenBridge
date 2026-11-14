@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MacTokenBridge app icon, 16 px rendition. One pixel is 64 units here.
+  Reduced to what survives at this size: the chip, the deck, two towers and the cables.
+  The tile, the chip, the deck and the towers sit on whole pixels, so the tile is 14 px wide
+  here instead of the grid's 12.9.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+	<defs>
+		<linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+			<stop offset="0" stop-color="#525B78"/>
+			<stop offset="1" stop-color="#181B26"/>
+		</linearGradient>
+		<linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+			<stop offset="0" stop-color="#FFEDB5"/>
+			<stop offset="0.45" stop-color="#F6C14C"/>
+			<stop offset="1" stop-color="#D6931F"/>
+		</linearGradient>
+		<clipPath id="chipClip">
+			<rect x="192" y="256" width="640" height="512" rx="120"/>
+		</clipPath>
+	</defs>
+	<rect x="64" y="64" width="896" height="896" rx="208" fill="url(#tile)"/>
+	<rect x="192" y="256" width="640" height="512" rx="120" fill="url(#gold)"/>
+	<g clip-path="url(#chipClip)" fill="none" stroke="#6E4603">
+		<path stroke-width="64" d="M192 608H832M352 320V768M672 320V768"/>
+	</g>
+	<!-- cables, one pixel at a time -->
+	<g clip-path="url(#chipClip)" fill="#6E4603" fill-opacity="0.8">
+		<path d="M384 384h64v64h-64zM576 384h64v64h-64zM448 448h128v64h-128z"/>
+		<path d="M256 384h64v64h-64zM192 448h64v64h-64zM704 384h64v64h-64zM768 448h64v64h-64z"/>
+	</g>
+</svg>

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MacTokenBridge app icon: a smart-card chip whose contact traces form a suspension bridge.
+  Master artwork, used for every size from 64 px up. The 32 px and 16 px renditions come from
+  the simplified AppIcon-32.svg and AppIcon-16.svg. Rebuild Resources/App/AppIcon.icns with
+  scripts/icon.sh after editing.
+
+  Canvas 1024, tile 824 with a 186 corner radius: the macOS app icon grid.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+	<defs>
+		<linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+			<stop offset="0" stop-color="#434B63"/>
+			<stop offset="1" stop-color="#12141D"/>
+		</linearGradient>
+		<radialGradient id="tileLight" cx="0.5" cy="0" r="0.75">
+			<stop offset="0" stop-color="#FFFFFF" stop-opacity="0.2"/>
+			<stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+		</radialGradient>
+		<linearGradient id="tileEdge" x1="0" y1="0" x2="0" y2="1">
+			<stop offset="0" stop-color="#FFFFFF" stop-opacity="0.34"/>
+			<stop offset="0.35" stop-color="#FFFFFF" stop-opacity="0"/>
+		</linearGradient>
+		<linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+			<stop offset="0" stop-color="#FFEDB5"/>
+			<stop offset="0.45" stop-color="#F6C14C"/>
+			<stop offset="1" stop-color="#C78418"/>
+		</linearGradient>
+		<linearGradient id="chipEdge" x1="0" y1="0" x2="0" y2="1">
+			<stop offset="0" stop-color="#FFF8DC" stop-opacity="0.85"/>
+			<stop offset="1" stop-color="#FFF8DC" stop-opacity="0.15"/>
+		</linearGradient>
+		<filter id="tileShadow" x="-20%" y="-20%" width="140%" height="140%">
+			<feGaussianBlur stdDeviation="16"/>
+		</filter>
+		<filter id="chipShadow" x="-30%" y="-30%" width="160%" height="160%">
+			<feGaussianBlur stdDeviation="20"/>
+		</filter>
+		<clipPath id="tileClip">
+			<rect x="100" y="100" width="824" height="824" rx="186"/>
+		</clipPath>
+		<clipPath id="chipClip">
+			<rect x="222" y="252" width="580" height="520" rx="116"/>
+		</clipPath>
+	</defs>
+
+	<!-- tile -->
+	<rect x="104" y="116" width="816" height="816" rx="186" fill="#000000" opacity="0.4" filter="url(#tileShadow)"/>
+	<rect x="100" y="100" width="824" height="824" rx="186" fill="url(#tile)"/>
+	<g clip-path="url(#tileClip)">
+		<rect x="100" y="100" width="824" height="824" fill="url(#tileLight)"/>
+		<rect x="103" y="103" width="818" height="818" rx="183" fill="none" stroke="url(#tileEdge)" stroke-width="6"/>
+	</g>
+
+	<!-- chip -->
+	<rect x="222" y="252" width="580" height="520" rx="116" fill="#000000" opacity="0.55" filter="url(#chipShadow)" transform="translate(0 20)"/>
+	<rect x="222" y="252" width="580" height="520" rx="116" fill="url(#gold)"/>
+
+	<!-- bridge: deck, two towers, main cable, side cables, hangers -->
+	<g clip-path="url(#chipClip)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+		<!-- lower lip of the engraving catches the light -->
+		<g stroke="#FFF4C8" stroke-opacity="0.6" transform="translate(0 6)">
+			<path stroke-width="22" d="M222 610H802M392 330V772M632 330V772M392 330Q512 610 632 330M392 330Q330 520 222 590M632 330Q694 520 802 590"/>
+			<path stroke-width="12" d="M452 435V610M512 470V610M572 435V610M301 515V610M723 515V610"/>
+		</g>
+		<g stroke="#8A5A08">
+			<path stroke-width="22" d="M222 610H802M392 330V772M632 330V772M392 330Q512 610 632 330M392 330Q330 520 222 590M632 330Q694 520 802 590"/>
+			<path stroke-width="12" d="M452 435V610M512 470V610M572 435V610M301 515V610M723 515V610"/>
+		</g>
+	</g>
+	<rect x="225" y="255" width="574" height="514" rx="113" fill="none" stroke="url(#chipEdge)" stroke-width="6"/>
+</svg>
