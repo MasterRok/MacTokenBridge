@@ -54,9 +54,10 @@ final class TokenSession: TKTokenSession, TKTokenSessionDelegate {
 	}
 
 	/// Keys are registered from their certificates (see registerToken), which sets keyType.
-	/// Anything that is not an EC key takes the RSA path.
+	/// Anything that is not an EC key takes the RSA path. The lookup goes through the token's
+	/// configuration: keychainContents is nil for a persistent token.
 	private func isECKey(_ keyObjectID: Any) -> Bool {
-		guard let key = try? token.keychainContents?.key(forObjectID: keyObjectID) else {
+		guard let key = try? token.configuration.key(for: keyObjectID) else {
 			return false
 		}
 		return key.keyType == kSecAttrKeyTypeECSECPrimeRandom as String
