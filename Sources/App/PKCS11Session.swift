@@ -102,11 +102,30 @@ final class PKCS11Session {
 		UInt(P11_ERR_NOT_FOUND),  // private keys are hidden when the login was lost
 	]
 
+	/// The token refused the PIN itself.
+	private static let rejectedPINErrors: Set<UInt> = [
+		UInt(P11_RV_PIN_INCORRECT),
+		UInt(P11_RV_PIN_INVALID),
+		UInt(P11_RV_PIN_LEN_RANGE),
+		UInt(P11_RV_PIN_EXPIRED),
+		UInt(P11_RV_PIN_LOCKED),
+	]
+
+	private enum RememberedPINLogin {
+		case notStored
+		case loggedIn
+		case refused
+	}
+
 	let modulePath: String
 	private let p11Thread = P11Thread(name: "\(Identifiers.app).p11")
 	private var sessionOpen = false
 	private var loggedIn = false
 	private var tokenLabel = "PKCS#11"
+	private var tokenSerial = ""
+	/// Set once a remembered PIN failed: it is not sent to the token again while the helper runs,
+	/// even if deleting it from the keychain failed.
+	private var rememberedPINFailed = false
 	private var lastUnavailableNotice: Date?
 
 	init(modulePath: String) {
@@ -190,7 +209,13 @@ final class PKCS11Session {
 		var serial = [CChar](repeating: 0, count: 32)
 		if p11_token_info(&label, label.count, &serial, serial.count) == P11_OK {
 			tokenLabel = String(cString: label)
+			tokenSerial = String(cString: serial)
 		}
+	}
+
+	/// Which token a remembered PIN belongs to.
+	private var pinStoreKey: String {
+		return tokenSerial.isEmpty ? tokenLabel : tokenSerial
 	}
 
 	/// The old session stays open until ensureSession has opened its replacement (see p11_open_session).
@@ -218,12 +243,24 @@ final class PKCS11Session {
 			return
 		}
 		var message = Strings.pinPrompt(token: tokenLabel)
-		for _ in 0..<3 {
-			let pin = try askPIN(message: message)
-			let rv = p11_login(pin)
+		var tries = 3
+		switch try loginWithRememberedPIN() {
+		case .loggedIn:
+			return
+		case .refused:
+			// The refused attempt counts against the token's limit too.
+			message = Strings.rememberedPINRefused
+			tries = 2
+		case .notStored:
+			break
+		}
+		for _ in 0..<tries {
+			let answer = try askPIN(message: message, offerRemember: true)
+			let rv = p11_login(answer.pin)
 			if rv == P11_OK {
 				loggedIn = true
 				log("logged in")
+				remember(answer.pin, for: answer.retention)
 				return
 			}
 			if rv == P11_RV_PIN_LOCKED {
@@ -237,6 +274,48 @@ final class PKCS11Session {
 		throw P11Error(rv: UInt(P11_RV_PIN_INCORRECT), operation: "login")
 	}
 
+	/// Logs in with the PIN the user chose to remember, if one is stored and still valid.
+	/// Tokens lock after a few wrong PINs, so a remembered PIN gets one attempt: unless the token
+	/// was simply unavailable, any failure deletes it, and it is not sent again while the helper
+	/// runs (sign() retries, and a module may report a wrong PIN as a generic error).
+	private func loginWithRememberedPIN() throws -> RememberedPINLogin {
+		guard !rememberedPINFailed, let pin = PINStore.load(token: pinStoreKey) else {
+			return .notStored
+		}
+		let rv = p11_login(pin)
+		if rv == P11_OK {
+			loggedIn = true
+			log("logged in with the remembered PIN")
+			return .loggedIn
+		}
+		if Self.tokenUnavailableErrors.contains(rv) {
+			// The token went away before it checked the PIN; keep it for when it is back.
+			throw P11Error(rv: rv, operation: "login")
+		}
+		rememberedPINFailed = true
+		PINStore.forget(token: pinStoreKey)
+		log("login with the remembered PIN failed (CK_RV 0x\(String(rv, radix: 16))), forgot it")
+		if rv == P11_RV_PIN_LOCKED {
+			throw P11Error(rv: rv, operation: "login (PIN locked)")
+		}
+		if !Self.rejectedPINErrors.contains(rv) {
+			// sign() retries on a new session and then asks the user.
+			throw P11Error(rv: rv, operation: "login")
+		}
+		return .refused
+	}
+
+	private func remember(_ pin: String, for retention: PINRetention) {
+		guard let expiry = retention.expiry(from: Date()) else {
+			PINStore.forget(token: pinStoreKey)
+			log("not remembering the PIN")
+			return
+		}
+		PINStore.save(pin: pin, token: pinStoreKey, expires: expiry)
+		rememberedPINFailed = false
+		log("remembering the PIN until \(expiry)")
+	}
+
 	private func signOnce(_ data: Data, mechanism: SignMechanism, keyID: Data) throws -> Data {
 		try ensureSession()
 		try ensureLogin()
@@ -247,7 +326,7 @@ final class PKCS11Session {
 		}
 		var contextPIN: String? = nil
 		if always != 0 {
-			contextPIN = try askPIN(message: Strings.contextPIN)
+			contextPIN = try askPIN(message: Strings.contextPIN, offerRemember: false).pin
 		}
 
 		var signature = [UInt8](repeating: 0, count: 1024)

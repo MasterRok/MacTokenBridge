@@ -44,6 +44,24 @@ enum Strings {
 		return pick(en: "Wrong PIN. Try again.", ru: "Неверный PIN. Попробуйте ещё раз.", pl: "Nieprawidłowy PIN. Spróbuj ponownie.")
 	}
 
+	static func retention(_ retention: PINRetention) -> String {
+		switch retention {
+		case .never:
+			return pick(en: "Don’t remember the PIN", ru: "Не запоминать PIN", pl: "Nie zapamiętuj PIN-u")
+		case .oneHour:
+			return pick(en: "Remember the PIN for 1 hour", ru: "Запомнить PIN на 1 час", pl: "Zapamiętaj PIN na 1 godzinę")
+		case .oneDay:
+			return pick(en: "Remember the PIN for 1 day", ru: "Запомнить PIN на 1 день", pl: "Zapamiętaj PIN na 1 dzień")
+		}
+	}
+
+	static var rememberedPINRefused: String {
+		return pick(
+			en: "The remembered PIN was not accepted and has been deleted. Enter the PIN.",
+			ru: "Запомненный PIN не подошёл и удалён. Введите PIN.",
+			pl: "Zapamiętany PIN nie został przyjęty i został usunięty. Wprowadź PIN.")
+	}
+
 	static var contextPIN: String {
 		return pick(en: "Confirm the signature with your PIN.", ru: "Подтвердите подпись PIN-кодом.", pl: "Potwierdź podpis kodem PIN.")
 	}
@@ -117,19 +135,46 @@ private func runDialog(_ script: String) throws -> String? {
 	return String(decoding: raw, as: UTF8.self).trimmingCharacters(in: .newlines)
 }
 
-/// Shows a password dialog. The PIN never leaves this process except into C_Login.
+/// Shows the PIN dialog and waits for it; offerRemember adds the choice to remember the PIN.
+/// The PIN goes only into C_Login and, if the user asks for it, PINStore.
 /// Gives up after two minutes so an unattended dialog does not block signing forever.
-func askPIN(message: String) throws -> String {
-	let script = """
-		display dialog \(appleScriptString(message)) with title "MacTokenBridge" default answer "" with hidden answer ¬
-			buttons {\(appleScriptString(Strings.cancel)), "OK"} default button "OK" ¬
-			cancel button \(appleScriptString(Strings.cancel)) with icon caution giving up after 120
-		text returned of result
-		"""
-	guard let pin = try runDialog(script), !pin.isEmpty else {
+///
+/// A CFUserNotification rather than an NSAlert: setting up NSApplication in the helper checks
+/// the app in with LaunchServices, which tears down the running token extension (it lives in
+/// the same bundle) and fails the signature it is waiting for.
+func askPIN(message: String, offerRemember: Bool) throws -> (pin: String, retention: PINRetention) {
+	let timeout: CFTimeInterval = 120
+	var dictionary: [CFString: Any] = [
+		kCFUserNotificationAlertHeaderKey: "MacTokenBridge",
+		kCFUserNotificationAlertMessageKey: message,
+		kCFUserNotificationDefaultButtonTitleKey: Strings.ok,
+		kCFUserNotificationAlternateButtonTitleKey: Strings.cancel,
+		kCFUserNotificationTextFieldTitlesKey: ["PIN"],
+	]
+	let flags = kCFUserNotificationCautionAlertLevel | CFUserNotificationSecureTextField(0)
+	if offerRemember {
+		// "Don't remember" first: the pop-up starts at item 0.
+		dictionary[kCFUserNotificationPopUpTitlesKey] = PINRetention.allCases.map(Strings.retention)
+	}
+	var error: Int32 = 0
+	guard let notification = CFUserNotificationCreate(nil, timeout, flags, &error, dictionary as CFDictionary) else {
+		throw CancelledError(what: "PIN entry (dialog error \(error))")
+	}
+	var response: CFOptionFlags = 0
+	let status = CFUserNotificationReceiveResponse(notification, timeout, &response)
+	// The low two bits of the response say which button was pressed (or kCFUserNotificationCancelResponse).
+	let button = response & 0x3
+	guard status == 0, button == kCFUserNotificationDefaultResponse,
+		let pin = CFUserNotificationGetResponseValue(notification, kCFUserNotificationTextFieldValuesKey, 0) as String?,
+		!pin.isEmpty else {
+		CFUserNotificationCancel(notification)
 		throw CancelledError(what: "PIN entry")
 	}
-	return pin
+	// The response carries the selected pop-up item as CFUserNotificationPopUpSelection(n).
+	let selected = Int((response >> 24) & 0xff)
+	let options = PINRetention.allCases
+	let retention = offerRemember && selected < options.count ? options[selected] : .never
+	return (pin, retention)
 }
 
 /// Shows message with "Try again" and "Cancel"; true when the user chose to try again.

@@ -10,7 +10,8 @@ let usage = """
 	  install [--module PATH]  register the helper and the token's certificates
 	                           (default module: the one already installed, else the first of
 	                           \(KnownModules.paths.joined(separator: "\n                           ")))
-	  uninstall                remove the token and the helper
+	  uninstall                remove the token, the helper and any remembered PIN
+	  forget-pin               delete remembered PINs and log out, so the next signature asks for the PIN
 	  status                   show what is registered
 	  selftest                 sign a random digest through the system keychain, like a browser does
 	Opened from Finder (or with --gui) it runs install and reports in a dialog.
@@ -238,6 +239,20 @@ func uninstall() {
 	launchctl(["bootout", "gui/\(getuid())/\(Identifiers.helperService)"])
 	try? FileManager.default.removeItem(atPath: launchAgentPath)
 	print("helper removed")
+	forgetPINs()
+}
+
+func forgetPINs() {
+	let count = PINStore.forgetAll()
+	print(count == 0 ? "no remembered PIN" : "deleted \(count) remembered PIN(s)")
+}
+
+/// forget-pin: also stop the helper, which logs out; launchd starts it again on the next request.
+func forgetPINsAndLogOut() {
+	forgetPINs()
+	if launchctl(["kill", "SIGTERM", "gui/\(getuid())/\(Identifiers.helperService)"]) == 0 {
+		print("logged out")
+	}
 }
 
 /// Signs through the system keychain exactly like a browser does: token identity -> extension -> helper -> module.
@@ -303,6 +318,8 @@ case "status":
 	printStatus()
 case "selftest":
 	selfTest()
+case "forget-pin":
+	forgetPINsAndLogOut()
 case nil where isatty(STDIN_FILENO) == 0, "--gui":
 	// Opened from Finder: there is no terminal to print to.
 	install(modulePath: nil, gui: true)
