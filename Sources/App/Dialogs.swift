@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 
 /// User-facing strings in English, Russian and Polish, picked from the system language.
@@ -45,18 +44,14 @@ enum Strings {
 		return pick(en: "Wrong PIN. Try again.", ru: "Неверный PIN. Попробуйте ещё раз.", pl: "Nieprawidłowy PIN. Spróbuj ponownie.")
 	}
 
-	static var rememberPIN: String {
-		return pick(en: "Remember PIN:", ru: "Запомнить PIN:", pl: "Zapamiętaj PIN:")
-	}
-
 	static func retention(_ retention: PINRetention) -> String {
 		switch retention {
 		case .never:
-			return pick(en: "Don’t remember", ru: "Не запоминать", pl: "Nie zapamiętuj")
+			return pick(en: "Don’t remember the PIN", ru: "Не запоминать PIN", pl: "Nie zapamiętuj PIN-u")
 		case .oneHour:
-			return pick(en: "For 1 hour", ru: "На 1 час", pl: "Na 1 godzinę")
+			return pick(en: "Remember the PIN for 1 hour", ru: "Запомнить PIN на 1 час", pl: "Zapamiętaj PIN na 1 godzinę")
 		case .oneDay:
-			return pick(en: "For 1 day", ru: "На 1 день", pl: "Na 1 dzień")
+			return pick(en: "Remember the PIN for 1 day", ru: "Запомнить PIN на 1 день", pl: "Zapamiętaj PIN na 1 dzień")
 		}
 	}
 
@@ -133,71 +128,44 @@ private func runDialog(_ script: String) throws -> String? {
 	return String(decoding: raw, as: UTF8.self).trimmingCharacters(in: .newlines)
 }
 
-/// Shows the PIN dialog and waits for it; offerRemember adds the "Remember PIN" choice.
+/// Shows the PIN dialog and waits for it; offerRemember adds the choice to remember the PIN.
 /// The PIN goes only into C_Login and, if the user asks for it, PINStore.
 /// Gives up after two minutes so an unattended dialog does not block signing forever.
-/// Called from the PKCS#11 thread: the dialog itself runs on the main thread.
+///
+/// A CFUserNotification rather than an NSAlert: setting up NSApplication in the helper checks
+/// the app in with LaunchServices, which tears down the running token extension (it lives in
+/// the same bundle) and fails the signature it is waiting for.
 func askPIN(message: String, offerRemember: Bool) throws -> (pin: String, retention: PINRetention) {
-	let show = {
-		MainActor.assumeIsolated {
-			PINDialog.run(message: message, offerRemember: offerRemember)
-		}
+	let timeout: CFTimeInterval = 120
+	var dictionary: [CFString: Any] = [
+		kCFUserNotificationAlertHeaderKey: "MacTokenBridge",
+		kCFUserNotificationAlertMessageKey: message,
+		kCFUserNotificationDefaultButtonTitleKey: Strings.ok,
+		kCFUserNotificationAlternateButtonTitleKey: Strings.cancel,
+		kCFUserNotificationTextFieldTitlesKey: ["PIN"],
+	]
+	let flags = kCFUserNotificationCautionAlertLevel | CFUserNotificationSecureTextField(0)
+	if offerRemember {
+		// "Don't remember" first: the pop-up starts at item 0.
+		dictionary[kCFUserNotificationPopUpTitlesKey] = PINRetention.allCases.map(Strings.retention)
 	}
-	let answer = Thread.isMainThread ? show() : DispatchQueue.main.sync(execute: show)
-	guard let answer, !answer.pin.isEmpty else {
+	var error: Int32 = 0
+	guard let notification = CFUserNotificationCreate(nil, timeout, flags, &error, dictionary as CFDictionary) else {
+		throw CancelledError(what: "PIN entry (dialog error \(error))")
+	}
+	var response: CFOptionFlags = 0
+	let status = CFUserNotificationReceiveResponse(notification, timeout, &response)
+	guard status == 0, response & 0x3 == kCFUserNotificationDefaultResponse,
+		let pin = CFUserNotificationGetResponseValue(notification, kCFUserNotificationTextFieldValuesKey, 0) as String?,
+		!pin.isEmpty else {
+		CFUserNotificationCancel(notification)
 		throw CancelledError(what: "PIN entry")
 	}
-	return answer
-}
-
-@MainActor
-private enum PINDialog {
-	static let timeout: TimeInterval = 120
-	static let width: CGFloat = 280
-
-	static func run(message: String, offerRemember: Bool) -> (pin: String, retention: PINRetention)? {
-		let alert = NSAlert()
-		alert.messageText = "MacTokenBridge"
-		alert.informativeText = message
-		alert.addButton(withTitle: Strings.ok)
-		alert.addButton(withTitle: Strings.cancel).keyEquivalent = "\u{1b}"
-
-		let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: width, height: 24))
-		let accessory = NSView(frame: field.frame)
-		accessory.addSubview(field)
-		var popup: NSPopUpButton?
-		if offerRemember {
-			// "Remember PIN: [Don't remember ▾]" below the field; "Don't remember" is the default.
-			let label = NSTextField(labelWithString: Strings.rememberPIN)
-			label.sizeToFit()
-			label.frame.origin = NSPoint(x: 0, y: 3)
-			let choice = NSPopUpButton(frame: NSRect(x: label.frame.maxX + 6, y: 0, width: width - label.frame.maxX - 6, height: 26))
-			choice.addItems(withTitles: PINRetention.allCases.map(Strings.retention))
-			accessory.frame.size.height = 62
-			field.frame.origin.y = 36
-			accessory.addSubview(label)
-			accessory.addSubview(choice)
-			popup = choice
-		}
-		alert.accessoryView = accessory
-		alert.window.initialFirstResponder = field
-		alert.window.level = .floating
-
-		// The helper has no windows of its own; without this the dialog opens behind the browser.
-		NSApp.activate()
-		let timer = Timer(timeInterval: timeout, repeats: false) { _ in
-			NSApp.abortModal()
-		}
-		RunLoop.main.add(timer, forMode: .modalPanel)
-		defer {
-			timer.invalidate()
-		}
-		guard alert.runModal() == .alertFirstButtonReturn else {
-			return nil
-		}
-		let retention = popup.map { PINRetention.allCases[$0.indexOfSelectedItem] } ?? .never
-		return (field.stringValue, retention)
-	}
+	// The response carries the selected pop-up item as CFUserNotificationPopUpSelection(n).
+	let selected = Int((response >> 24) & 0xff)
+	let options = PINRetention.allCases
+	let retention = offerRemember && selected < options.count ? options[selected] : .never
+	return (pin, retention)
 }
 
 /// Shows message with "Try again" and "Cancel"; true when the user chose to try again.

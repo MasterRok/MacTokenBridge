@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 
 /// XPC service run by launchd (LaunchAgent) for the token extension.
@@ -39,9 +38,6 @@ final class HelperService: NSObject, NSXPCListenerDelegate, HelperProtocol {
 }
 
 func runHelper(modulePath: String) -> Never {
-	// The PIN dialog is an NSAlert shown from this process (see askPIN); no Dock icon, no menu bar.
-	NSApplication.shared.setActivationPolicy(.accessory)
-	NSApplication.shared.finishLaunching()
 	let service = HelperService(modulePath: modulePath)
 	let listener = NSXPCListener(machServiceName: Identifiers.helperService)
 	listener.delegate = service

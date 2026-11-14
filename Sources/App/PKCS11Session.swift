@@ -285,6 +285,7 @@ final class PKCS11Session {
 	private func remember(_ pin: String, for retention: PINRetention) {
 		guard let expiry = retention.expiry(from: Date()) else {
 			PINStore.forget(token: pinStoreKey)
+			log("not remembering the PIN")
 			return
 		}
 		PINStore.save(pin: pin, token: pinStoreKey, expires: expiry)
