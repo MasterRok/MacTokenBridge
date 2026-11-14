@@ -31,7 +31,7 @@ else
 fi
 
 rm -rf "$APP" "$OBJ"
-mkdir -p "$APP/Contents/MacOS" "$APPEX/Contents/MacOS" "$OBJ/gen"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APPEX/Contents/MacOS" "$OBJ/gen"
 
 plist() {
 	sed -e "s/__VERSION__/$VERSION/" -e "s/__BUILD__/$BUILD_NUMBER/" "$1" > "$2"
@@ -73,6 +73,8 @@ for arch in $ARCHS; do
 done
 lipo -create "${ARCHS[@]/#/$OBJ/app-}" -output "$APP/Contents/MacOS/MacTokenBridge"
 plist Resources/App/Info.plist "$APP/Contents/Info.plist"
+# The icon is checked in; scripts/icon.sh rebuilds it from the artwork in Resources/Icon.
+cp Resources/App/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --sign "$IDENTITY" "${SIGN_FLAGS[@]}" --entitlements Resources/App/App.entitlements "$APP"
 
 codesign --verify --strict --verbose=1 "$APP"

@@ -134,6 +134,8 @@ APP_IDENTITY="Developer ID Application: Name (TEAMID)" scripts/package.sh
 
 This builds, signs, notarizes and staples `build/MacTokenBridge-<version>.dmg`. It needs a `notarytool` keychain profile named `MacTokenBridge` (`xcrun notarytool store-credentials MacTokenBridge ...`). `SKIP_NOTARIZE=1` skips notarization for local testing.
 
+The app icon is drawn in `Resources/Icon/*.svg`. After editing the artwork, run `scripts/icon.sh` to rebuild `Resources/App/AppIcon.icns`, and commit both.
+
 ## Support the project
 
 MacTokenBridge is free. If it saved you time, donations are welcome. Please send each coin **only on the network listed** — anything sent on another network is lost.

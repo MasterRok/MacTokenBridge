@@ -13,15 +13,28 @@ cd "$(dirname "$0")/.."
 NOTARY_PROFILE=${NOTARY_PROFILE:-MacTokenBridge}
 VERSION=$(cat VERSION)
 STAGE=build/dmg
+RW_DMG=build/dmg-rw.dmg
 DMG=build/MacTokenBridge-$VERSION.dmg
 
 SIGN_IDENTITY="$APP_IDENTITY" scripts/build.sh
 
-rm -rf "$STAGE" "$DMG"
+rm -rf "$STAGE" "$RW_DMG" "$DMG"
 mkdir -p "$STAGE"
 ditto build/MacTokenBridge.app "$STAGE/MacTokenBridge.app"
 ln -s /Applications "$STAGE/Applications"
-hdiutil create -quiet -volname "MacTokenBridge $VERSION" -srcfolder "$STAGE" -fs HFS+ -format UDZO "$DMG"
+cp Resources/App/AppIcon.icns "$STAGE/.VolumeIcon.icns"
+
+# Finder shows .VolumeIcon.icns only if the volume's root folder is flagged as having a custom icon,
+# and hdiutil does not carry that flag over from the source folder. So: make a writable image,
+# set the flag on the mounted volume, then compress it.
+hdiutil create -quiet -volname "MacTokenBridge $VERSION" -srcfolder "$STAGE" -fs HFS+ -format UDRW "$RW_DMG"
+MOUNT=$(mktemp -d)
+hdiutil attach -quiet -nobrowse -noautoopen -mountpoint "$MOUNT" "$RW_DMG"
+SetFile -a C "$MOUNT"
+hdiutil detach -quiet "$MOUNT"
+rmdir "$MOUNT"
+hdiutil convert -quiet "$RW_DMG" -format UDZO -o "$DMG"
+rm "$RW_DMG"
 codesign --force --sign "$APP_IDENTITY" --timestamp "$DMG"
 
 if [[ ${SKIP_NOTARIZE:-0} == 1 ]]; then
