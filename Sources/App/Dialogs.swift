@@ -55,6 +55,13 @@ enum Strings {
 		}
 	}
 
+	static var rememberedPINRefused: String {
+		return pick(
+			en: "The remembered PIN was not accepted and has been deleted. Enter the PIN.",
+			ru: "Запомненный PIN не подошёл и удалён. Введите PIN.",
+			pl: "Zapamiętany PIN nie został przyjęty i został usunięty. Wprowadź PIN.")
+	}
+
 	static var contextPIN: String {
 		return pick(en: "Confirm the signature with your PIN.", ru: "Подтвердите подпись PIN-кодом.", pl: "Potwierdź podpis kodem PIN.")
 	}
@@ -155,7 +162,9 @@ func askPIN(message: String, offerRemember: Bool) throws -> (pin: String, retent
 	}
 	var response: CFOptionFlags = 0
 	let status = CFUserNotificationReceiveResponse(notification, timeout, &response)
-	guard status == 0, response & 0x3 == kCFUserNotificationDefaultResponse,
+	// The low two bits of the response say which button was pressed (or kCFUserNotificationCancelResponse).
+	let button = response & 0x3
+	guard status == 0, button == kCFUserNotificationDefaultResponse,
 		let pin = CFUserNotificationGetResponseValue(notification, kCFUserNotificationTextFieldValuesKey, 0) as String?,
 		!pin.isEmpty else {
 		CFUserNotificationCancel(notification)

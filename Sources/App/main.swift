@@ -250,8 +250,9 @@ func forgetPINs() {
 /// forget-pin: also stop the helper, which logs out; launchd starts it again on the next request.
 func forgetPINsAndLogOut() {
 	forgetPINs()
-	launchctl(["kill", "SIGTERM", "gui/\(getuid())/\(Identifiers.helperService)"])
-	print("logged out")
+	if launchctl(["kill", "SIGTERM", "gui/\(getuid())/\(Identifiers.helperService)"]) == 0 {
+		print("logged out")
+	}
 }
 
 /// Signs through the system keychain exactly like a browser does: token identity -> extension -> helper -> module.

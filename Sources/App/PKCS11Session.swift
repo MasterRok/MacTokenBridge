@@ -102,14 +102,20 @@ final class PKCS11Session {
 		UInt(P11_ERR_NOT_FOUND),  // private keys are hidden when the login was lost
 	]
 
-	/// The token refused the PIN itself; a remembered PIN that gets one of these is deleted.
+	/// The token refused the PIN itself.
 	private static let rejectedPINErrors: Set<UInt> = [
-		0xa0,  // CKR_PIN_INCORRECT
-		0xa1,  // CKR_PIN_INVALID
-		0xa2,  // CKR_PIN_LEN_RANGE
-		0xa3,  // CKR_PIN_EXPIRED
-		0xa4,  // CKR_PIN_LOCKED
+		UInt(P11_RV_PIN_INCORRECT),
+		UInt(P11_RV_PIN_INVALID),
+		UInt(P11_RV_PIN_LEN_RANGE),
+		UInt(P11_RV_PIN_EXPIRED),
+		UInt(P11_RV_PIN_LOCKED),
 	]
+
+	private enum RememberedPINLogin {
+		case notStored
+		case loggedIn
+		case refused
+	}
 
 	let modulePath: String
 	private let p11Thread = P11Thread(name: "\(Identifiers.app).p11")
@@ -117,6 +123,9 @@ final class PKCS11Session {
 	private var loggedIn = false
 	private var tokenLabel = "PKCS#11"
 	private var tokenSerial = ""
+	/// Set once a remembered PIN failed: it is not sent to the token again while the helper runs,
+	/// even if deleting it from the keychain failed.
+	private var rememberedPINFailed = false
 	private var lastUnavailableNotice: Date?
 
 	init(modulePath: String) {
@@ -233,11 +242,19 @@ final class PKCS11Session {
 			loggedIn = true
 			return
 		}
-		if try loginWithRememberedPIN() {
-			return
-		}
 		var message = Strings.pinPrompt(token: tokenLabel)
-		for _ in 0..<3 {
+		var tries = 3
+		switch try loginWithRememberedPIN() {
+		case .loggedIn:
+			return
+		case .refused:
+			// The refused attempt counts against the token's limit too.
+			message = Strings.rememberedPINRefused
+			tries = 2
+		case .notStored:
+			break
+		}
+		for _ in 0..<tries {
 			let answer = try askPIN(message: message, offerRemember: true)
 			let rv = p11_login(answer.pin)
 			if rv == P11_OK {
@@ -258,28 +275,34 @@ final class PKCS11Session {
 	}
 
 	/// Logs in with the PIN the user chose to remember, if one is stored and still valid.
-	/// It is tried once only: tokens lock after a few wrong PINs, so a refused PIN is deleted
-	/// at once and the user is asked instead.
-	private func loginWithRememberedPIN() throws -> Bool {
-		guard let pin = PINStore.load(token: pinStoreKey) else {
-			return false
+	/// Tokens lock after a few wrong PINs, so a remembered PIN gets one attempt: unless the token
+	/// was simply unavailable, any failure deletes it, and it is not sent again while the helper
+	/// runs (sign() retries, and a module may report a wrong PIN as a generic error).
+	private func loginWithRememberedPIN() throws -> RememberedPINLogin {
+		guard !rememberedPINFailed, let pin = PINStore.load(token: pinStoreKey) else {
+			return .notStored
 		}
 		let rv = p11_login(pin)
 		if rv == P11_OK {
 			loggedIn = true
 			log("logged in with the remembered PIN")
-			return true
+			return .loggedIn
 		}
-		guard Self.rejectedPINErrors.contains(rv) else {
-			// Not about the PIN (e.g. the token went away): keep it for the next attempt.
+		if Self.tokenUnavailableErrors.contains(rv) {
+			// The token went away before it checked the PIN; keep it for when it is back.
 			throw P11Error(rv: rv, operation: "login")
 		}
+		rememberedPINFailed = true
 		PINStore.forget(token: pinStoreKey)
-		log("the token refused the remembered PIN (CK_RV 0x\(String(rv, radix: 16))), forgot it")
+		log("login with the remembered PIN failed (CK_RV 0x\(String(rv, radix: 16))), forgot it")
 		if rv == P11_RV_PIN_LOCKED {
 			throw P11Error(rv: rv, operation: "login (PIN locked)")
 		}
-		return false
+		if !Self.rejectedPINErrors.contains(rv) {
+			// sign() retries on a new session and then asks the user.
+			throw P11Error(rv: rv, operation: "login")
+		}
+		return .refused
 	}
 
 	private func remember(_ pin: String, for retention: PINRetention) {
@@ -289,6 +312,7 @@ final class PKCS11Session {
 			return
 		}
 		PINStore.save(pin: pin, token: pinStoreKey, expires: expiry)
+		rememberedPINFailed = false
 		log("remembering the PIN until \(expiry)")
 	}
 
