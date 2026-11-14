@@ -147,9 +147,24 @@ func installLaunchAgent(modulePath: String) {
 	FileManager.default.createFile(atPath: launchAgentPath, contents: plist)
 
 	let domain = "gui/\(getuid())"
-	launchctl(["bootout", "\(domain)/\(Identifiers.helperService)"])
-	guard launchctl(["bootstrap", domain, launchAgentPath]) == 0 else {
-		fail("launchctl bootstrap failed")
+	let service = "\(domain)/\(Identifiers.helperService)"
+	launchctl(["bootout", service])
+	// bootout returns while the old helper may still be finalizing the module after SIGTERM;
+	// until launchd has removed the service, bootstrap fails with "5: Input/output error".
+	// Wait up to ~5 s for the service to go, then retry bootstrap a few times for good measure.
+	for _ in 0..<20 {
+		if launchctl(["print", service]) != 0 {
+			break
+		}
+		usleep(250_000)
+	}
+	var status = launchctl(["bootstrap", domain, launchAgentPath])
+	for _ in 0..<4 where status != 0 {
+		usleep(500_000)
+		status = launchctl(["bootstrap", domain, launchAgentPath])
+	}
+	guard status == 0 else {
+		fail("launchctl bootstrap failed (status \(status)); run install again")
 	}
 	print("helper installed: \(launchAgentPath)")
 }
