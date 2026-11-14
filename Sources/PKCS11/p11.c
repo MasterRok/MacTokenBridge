@@ -210,16 +210,17 @@ unsigned long p11_key_always_authenticate(const uint8_t *key_id, size_t key_id_l
 	return CKR_OK;
 }
 
-unsigned long p11_sign_rsa_pkcs(const uint8_t *key_id, size_t key_id_len,
-                                const uint8_t *data, size_t data_len,
-                                const char *context_pin,
-                                uint8_t *sig, size_t *sig_len) {
+unsigned long p11_sign(unsigned long mechanism,
+                       const uint8_t *key_id, size_t key_id_len,
+                       const uint8_t *data, size_t data_len,
+                       const char *context_pin,
+                       uint8_t *sig, size_t *sig_len) {
 	CK_OBJECT_HANDLE key;
 	CK_RV rv = find_private_key(key_id, key_id_len, &key);
 	if (rv != CKR_OK) {
 		return rv;
 	}
-	CK_MECHANISM mech = { CKM_RSA_PKCS, NULL, 0 };
+	CK_MECHANISM mech = { mechanism, NULL, 0 };
 	rv = fl->C_SignInit(session, &mech, key);
 	if (rv != CKR_OK) {
 		return rv;

@@ -261,9 +261,11 @@ func selfTest() {
 			(attributes[kSecAttrTokenID as String] as? String)?.hasPrefix(Identifiers.tokenClass) == true else {
 			continue
 		}
-		let algorithm = SecKeyAlgorithm.rsaSignatureDigestPKCS1v15SHA256
+		// What a browser asks for with a SHA-256 TLS signature scheme.
+		let isEC = attributes[kSecAttrKeyType as String] as? String == kSecAttrKeyTypeECSECPrimeRandom as String
+		let algorithm: SecKeyAlgorithm = isEC ? .ecdsaSignatureDigestX962SHA256 : .rsaSignatureDigestPKCS1v15SHA256
 		print("identity: \(SecCertificateCopySubjectSummary(certificate) as String? ?? "?")")
-		print("supports rsaSignatureDigestPKCS1v15SHA256: \(SecKeyIsAlgorithmSupported(key, .sign, algorithm))")
+		print("supports \(algorithm.rawValue): \(SecKeyIsAlgorithmSupported(key, .sign, algorithm))")
 
 		var digest = Data(count: 32)
 		_ = digest.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, 32, $0.baseAddress!) }

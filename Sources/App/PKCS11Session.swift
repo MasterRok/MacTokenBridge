@@ -58,6 +58,15 @@ enum KnownModules {
 	}
 }
 
+/// The module returned an ECDSA signature that is not r||s.
+struct SignatureFormatError: Error, CustomStringConvertible {
+	let length: Int
+
+	var description: String {
+		return "malformed ECDSA signature (\(length) bytes)"
+	}
+}
+
 struct TokenCertificate {
 	let der: Data
 	let keyID: Data
@@ -137,12 +146,13 @@ final class PKCS11Session {
 	/// Up to three attempts: as is, then with a new session (keeps the login, so no second PIN),
 	/// then, if the token still looks unavailable, with a re-initialized module (a cloud app may
 	/// have reconnected), otherwise with another new session.
-	func sign(digestInfo: Data, keyID: Data) throws -> Data {
+	/// For .rsaPKCS1 data is a DER DigestInfo; for .ecdsa a digest, and the signature is returned as X9.62 DER.
+	func sign(_ data: Data, mechanism: SignMechanism, keyID: Data) throws -> Data {
 		return try p11Thread.sync { [self] in
 			let retryable = Self.tokenUnavailableErrors.union(Self.staleSessionErrors)
 			for attempt in 1...3 {
 				do {
-					return try signOnce(digestInfo: digestInfo, keyID: keyID)
+					return try signOnce(data, mechanism: mechanism, keyID: keyID)
 				} catch let error as P11Error where attempt < 3 && retryable.contains(error.rv) {
 					log("attempt \(attempt) failed: \(error)")
 					// Re-initializing the module logs out, so only do it when the token looks unavailable.
@@ -227,7 +237,7 @@ final class PKCS11Session {
 		throw P11Error(rv: UInt(P11_RV_PIN_INCORRECT), operation: "login")
 	}
 
-	private func signOnce(digestInfo: Data, keyID: Data) throws -> Data {
+	private func signOnce(_ data: Data, mechanism: SignMechanism, keyID: Data) throws -> Data {
 		try ensureSession()
 		try ensureLogin()
 
@@ -243,8 +253,9 @@ final class PKCS11Session {
 		var signature = [UInt8](repeating: 0, count: 1024)
 		var signatureLen = signature.count
 		let rv = keyID.withUnsafeBytes { id in
-			digestInfo.withUnsafeBytes { input in
-				p11_sign_rsa_pkcs(
+			data.withUnsafeBytes { input in
+				p11_sign(
+					UInt(mechanism.rawValue),
 					id.bindMemory(to: UInt8.self).baseAddress, id.count,
 					input.bindMemory(to: UInt8.self).baseAddress, input.count,
 					contextPIN,
@@ -256,7 +267,16 @@ final class PKCS11Session {
 			// sign() then retries on a new session.
 			throw P11Error(rv: rv, operation: "sign")
 		}
-		return Data(signature[0..<signatureLen])
+		let result = Data(signature[0..<signatureLen])
+		switch mechanism {
+		case .rsaPKCS1:
+			return result
+		case .ecdsa:
+			guard let der = ECDSASignature.derEncoded(raw: result) else {
+				throw SignatureFormatError(length: result.count)
+			}
+			return der
+		}
 	}
 
 	private func noticeUnavailable() {
